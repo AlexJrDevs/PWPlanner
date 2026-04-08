@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useGridStore, type Tool } from '../../stores/gridStore'
 import { getItemById } from '../../data/items'
 import ItemPalette from './ItemPalette'
+import MapModal from './MapModal'
 
 export default function Toolbar() {
   const {
@@ -49,7 +50,8 @@ export default function Toolbar() {
     { id: 'picker', label: 'Picker',      icon: '💧' },
     { id: 'fill',   label: 'Flood Fill',  icon: '🪣' },
   ]
-
+  
+    const [mapOpen, setMapOpen] = useState(false)
   return (
     <div className="flex items-center gap-1 px-3 py-2 bg-[#1a1a1a] border-b border-gray-700 overflow-x-auto">
       {/* Tool buttons */}
@@ -93,21 +95,15 @@ export default function Toolbar() {
       <div className="w-px h-8 bg-gray-600 mx-2" />
 
       {/* Map & Settings */}
-      <button
-        onClick={() => alert('Map — configure later')}
-        title="Map"
+        <button
+        onClick={() => setMapOpen(true)}
+        title="World Settings"
         className="w-10 h-10 flex items-center justify-center text-2xl rounded border bg-[#2a2a2a] border-gray-600 hover:border-gray-400 hover:bg-[#363636]"
-      >
+        >
         🗺️
-      </button>
+        </button>
+        {mapOpen && <MapModal onClose={() => setMapOpen(false)} />}
 
-      <button
-        onClick={() => alert('Settings — configure later')}
-        title="Settings"
-        className="w-10 h-10 flex items-center justify-center text-2xl rounded border bg-[#2a2a2a] border-gray-600 hover:border-gray-400 hover:bg-[#363636]"
-      >
-        ⚙️
-      </button>
 
       {/* Right side — Current block + live coordinates */}
       <div className="ml-auto flex items-center gap-3 pr-2">

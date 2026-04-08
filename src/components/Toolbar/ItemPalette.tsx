@@ -91,12 +91,16 @@ export default function ItemPalette() {
 
   // Dropdown position
   const dropdownStyle = () => {
-    if (!triggerRef.current) return { position: 'fixed' as const, top: '100px', left: '100px' }
+    if (!triggerRef.current) return {}
+
     const rect = triggerRef.current.getBoundingClientRect()
+
     return {
       position: 'fixed' as const,
-      top: `${rect.bottom + 8}px`,
+      top: `${rect.top}px`,
       left: `${rect.left}px`,
+      transform: 'translateY(-100%)',   // Moves entire dropdown up so its bottom aligns near the button
+      marginBottom: '8px',
       zIndex: 60,
     }
   }

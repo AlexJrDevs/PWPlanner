@@ -9,22 +9,23 @@ export default function EditorLayout() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <Toolbar />
-
-      {/* Canvas fills all remaining space */}
+      {/* Canvas fills ALL remaining space */}
       <div className="relative flex-1 overflow-hidden">
         <WorldGrid />
 
-        {/* Overlay — outer div blocks nothing, inner div only covers the bar itself */}
+        {/* Floating conditional toolbars — appear just above the main toolbar */}
         {(activeTool === 'move' || activeTool === 'select') && (
-          <div className="absolute top-0 left-0 right-0 pointer-events-none z-30">
-            <div className="pointer-events-auto">
+          <div className="absolute bottom-0 left-0 right-0 z-40 pointer-events-none">
+            <div className="pointer-events-auto px-4 py-2 border-t border-gray-700">
               {activeTool === 'move' && <ViewToolbar />}
               {activeTool === 'select' && <SelectionToolbar />}
             </div>
           </div>
         )}
       </div>
+
+      {/* Main Toolbar — always at the very bottom */}
+      <Toolbar />
     </div>
   )
 }
