@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useGridStore, type Tool } from '../../stores/gridStore'
 import { getItemById } from '../../data/items'
+import ItemPalette from './ItemPalette'
 
 export default function Toolbar() {
   const {
@@ -39,7 +40,6 @@ export default function Toolbar() {
 
   const displayX = mouseGridX   // 0-based as shown in your original image
   const displayY = mouseGridY
-  const cellIndex = mouseGridY * 80 + mouseGridX   // WORLD_COLS = 80
 
   const tools: { id: Tool; label: string; icon: string }[] = [
     { id: 'move',   label: 'Move / View', icon: '👁️' },
@@ -111,18 +111,12 @@ export default function Toolbar() {
 
       {/* Right side — Current block + live coordinates */}
       <div className="ml-auto flex items-center gap-3 pr-2">
-        <div
-          className="w-10 h-10 rounded border-2 border-blue-500 bg-[#3a3a3a] flex items-center justify-center text-3xl cursor-pointer hover:scale-105 transition-transform"
-          title="Current block — click to open palette"
-        >
-          🪨
-        </div>
+        <ItemPalette />  
 
         <div className="text-xs text-gray-400 font-mono leading-relaxed">
           <div>
-            X:<span className="text-white ml-1">{displayX}</span>{' '}
-            Y:<span className="text-white ml-1">{displayY}</span>{' '}
-            <span className="text-gray-600">({cellIndex})</span>
+            X:<span className="text-white ml-1">{displayX + 1}</span>{' '}
+            Y:<span className="text-white ml-1">{displayY + 1}</span>{' '}
           </div>
           <div className="flex gap-2">
             <span className="text-blue-400">
