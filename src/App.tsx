@@ -2,9 +2,7 @@ import { useEffect } from 'react'
 import EditorLayout from './components/Toolbar/EditorLayout'
 import AdBanner from './components/AdBanner'
 import { useGridStore } from './stores/gridStore'
-
 import { FaDiscord } from 'react-icons/fa'
-
 
 function App() {
   const grid = useGridStore(s => s.grid)
@@ -40,18 +38,16 @@ function App() {
         </a>
       </header>
 
-
       <aside className="lg:hidden shrink-0 flex items-center justify-center bg-gray-900 border-b border-gray-800">
         <AdBanner adSlot="6291668108" adFormat="horizontal" />
       </aside>
 
-
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-r border-gray-800">
           <AdBanner adSlot="3873388321" adFormat="vertical" />
         </aside>
 
-        <div className="flex-1 overflow-hidden min-w-0">
+        <div className="flex-1 overflow-hidden min-w-0 min-h-0">
           <EditorLayout />
         </div>
 
@@ -59,6 +55,7 @@ function App() {
           <AdBanner adSlot="2560306650" adFormat="vertical" />
         </aside>
       </div>
+
     </div>
   )
 }
