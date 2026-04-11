@@ -21,7 +21,7 @@ if (frameTextureCache.has(id)) return frameTextureCache.get(id) as Texture
   // Load the atlas PNG once, reuse after
   let atlasTexture = atlasTextureCache.get(item.atlas)
   if (!atlasTexture) {
-    atlasTexture = await Assets.load(`${ATLAS_BASE}${item.atlas}`)
+    atlasTexture = await Assets.load<Texture>(`${ATLAS_BASE}${item.atlas}`)
     atlasTextureCache.set(item.atlas, atlasTexture)
   }
 
