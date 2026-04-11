@@ -18,6 +18,7 @@ export default function AdBanner({ adSlot, adFormat = 'auto' }: Props) {
 
   useEffect(() => {
     if (!insRef.current || isDev) return
+    if (insRef.current.offsetWidth === 0) return
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({})
     } catch (e) {
@@ -27,9 +28,9 @@ export default function AdBanner({ adSlot, adFormat = 'auto' }: Props) {
 
   const isHorizontal = adFormat === 'horizontal'
 
-  const style = isHorizontal
-    ? { width: '100%', height: '50px' }
-    : { width: '140px', minHeight: '600px' }
+const style = isHorizontal
+  ? { width: '100%', height: '50px' }
+  : { display: 'block', width: '100%', minHeight: '600px' }
 
   if (isDev) {
     return (
