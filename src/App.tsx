@@ -5,7 +5,6 @@ import { useGridStore } from './stores/gridStore'
 
 import { FaDiscord } from 'react-icons/fa'
 
-const ADS_ENABLED = import.meta.env.VITE_ADS_ENABLED === 'true'
 
 function App() {
   const grid = useGridStore(s => s.grid)
@@ -31,7 +30,7 @@ function App() {
       <header className="px-4 py-2 bg-gray-900 border-b border-gray-700 flex items-center gap-3 shrink-0">
         <h1 className="text-lg font-bold text-orange-400">PW Planner</h1>
         <a
-          href="https://discord.gg/pzDHcbxAkT"
+          href="https://discord.gg/pzDHcbxAkTZ"
           target="_blank"
           rel="noopener noreferrer"
           title="Join our Discord"
@@ -41,28 +40,24 @@ function App() {
         </a>
       </header>
 
-      {ADS_ENABLED && (
-        <aside className="lg:hidden shrink-0 flex items-center justify-center bg-gray-900 border-b border-gray-800">
-          <AdBanner adSlot="MOBILE_SLOT_ID" adFormat="horizontal" />
-        </aside>
-      )}
+
+      <aside className="lg:hidden shrink-0 flex items-center justify-center bg-gray-900 border-b border-gray-800">
+        <AdBanner adSlot="MOBILE_SLOT_ID" adFormat="horizontal" />
+      </aside>
+
 
       <div className="flex flex-1 overflow-hidden">
-        {ADS_ENABLED && (
-          <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-r border-gray-800">
-            <AdBanner adSlot="LEFT_SLOT_ID" adFormat="vertical" />
-          </aside>
-        )}
+        <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-r border-gray-800">
+          <AdBanner adSlot="LEFT_SLOT_ID" adFormat="vertical" />
+        </aside>
 
         <div className="flex-1 overflow-hidden min-w-0">
           <EditorLayout />
         </div>
 
-        {ADS_ENABLED && (
-          <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-l border-gray-800">
-            <AdBanner adSlot="RIGHT_SLOT_ID" adFormat="vertical" />
-          </aside>
-        )}
+        <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-l border-gray-800">
+          <AdBanner adSlot="RIGHT_SLOT_ID" adFormat="vertical" />
+        </aside>
       </div>
     </div>
   )
