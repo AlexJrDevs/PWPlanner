@@ -13,12 +13,11 @@ const atlasTextureCache = new Map<string, Texture>()
 const frameTextureCache = new Map<number, Texture>()
 
 async function getItemTexture(id: number): Promise<Texture | null> {
-if (frameTextureCache.has(id)) return frameTextureCache.get(id) as Texture
+  if (frameTextureCache.has(id)) return frameTextureCache.get(id) as Texture
 
   const item = getItemById(id)
   if (!item) return null
 
-  // Load the atlas PNG once, reuse after
   let atlasTexture = atlasTextureCache.get(item.atlas)
   if (!atlasTexture) {
     atlasTexture = await Assets.load<Texture>(`${ATLAS_BASE}${item.atlas}`)
@@ -26,8 +25,6 @@ if (frameTextureCache.has(id)) return frameTextureCache.get(id) as Texture
   }
 
   const resolvedAtlas = atlasTexture!
-
-  // Flip Y — manifest uses OpenGL bottom-up, PixiJS is top-down
   const flippedY = resolvedAtlas.height - item.y - item.h
 
   const frame = new Texture({
@@ -48,15 +45,12 @@ export default function WorldGrid() {
     if (!el) return
 
     const measure = () => {
-      const width = el.clientWidth
-      const height = el.clientHeight
-      setSize({ width, height })
+      setSize({ width: el.clientWidth, height: el.clientHeight })
     }
 
     measure()
     const obs = new ResizeObserver(measure)
     obs.observe(el)
-
     return () => obs.disconnect()
   }, [])
 
@@ -78,7 +72,6 @@ export default function WorldGrid() {
   )
 }
 
-/** Place a sprite at its natural pixel size, centred inside a tileW×tileH cell. */
 function placeSpriteInTile(
   sprite: Sprite,
   cellX: number,
@@ -86,20 +79,13 @@ function placeSpriteInTile(
   tileW: number,
   tileH: number,
 ) {
-  // Natural size of this sprite's source rect (already cropped by the Texture frame)
   const naturalW = sprite.texture.width
   const naturalH = sprite.texture.height
-
-  // Scale so it fits inside the tile without stretching
   const scale = Math.min(tileW / naturalW, tileH / naturalH)
-
   const drawW = naturalW * scale
   const drawH = naturalH * scale
-
   sprite.width = drawW
   sprite.height = drawH
-
-  // Centre inside the cell
   sprite.x = cellX + (tileW - drawW) / 2
   sprite.y = cellY + (tileH - drawH)
 }
@@ -166,46 +152,65 @@ function GridRenderer({
     })
   }, [canvasWidth, canvasHeight, fillZoom, setStoreZoom])
 
-  // ── Sync zoom FROM store (toolbar zoom in/out buttons) ────────────────────
+  // ── Sync zoom FROM store — zoom toward canvas center ──────────────────────
   const prevStoreZoomRef = useRef(storeZoom)
+
+  // Keep a stable ref to current offset/zoom so the effect below can read
+  // them without being re-triggered on every render.
+  const offsetRef = useRef(offset)
+  const zoomRef = useRef(zoom)
+  useEffect(() => { offsetRef.current = offset }, [offset])
+  useEffect(() => { zoomRef.current = zoom }, [zoom])
+
   useEffect(() => {
-    if (Math.abs(storeZoom - prevStoreZoomRef.current) > 0.001) {
-      prevStoreZoomRef.current = storeZoom
-      setZoom(storeZoom)
-    }
-  }, [storeZoom])
+    if (Math.abs(storeZoom - prevStoreZoomRef.current) < 0.001) return
+
+    const prevZoom = prevStoreZoomRef.current
+    prevStoreZoomRef.current = storeZoom
+
+    // Zoom toward the centre of the canvas
+    const cx = canvasWidth / 2
+    const cy = canvasHeight / 2
+    const prev = offsetRef.current
+
+    setOffset({
+      x: cx - (cx - prev.x) * (storeZoom / prevZoom),
+      y: cy - (cy - prev.y) * (storeZoom / prevZoom),
+    })
+    setZoom(storeZoom)
+  }, [storeZoom, canvasWidth, canvasHeight])
 
   // ── Texture loading ───────────────────────────────────────────────────────
-    useEffect(() => {
-        const itemIds = new Set<number>()
-        for (const row of grid) {
-            for (const cell of row) {
-            if (cell.fg !== 0) itemIds.add(cell.fg)
-            if (cell.bg !== 0) itemIds.add(cell.bg)
-            }
-        }
-        if (duplicateGhost) {
-            for (const { cell } of duplicateGhost) {
-            if (cell.fg !== 0) itemIds.add(cell.fg)
-            if (cell.bg !== 0) itemIds.add(cell.bg)
-            }
-        }
+  useEffect(() => {
+    const itemIds = new Set<number>()
+    for (const row of grid) {
+      for (const cell of row) {
+        if (cell.fg !== 0) itemIds.add(cell.fg)
+        if (cell.bg !== 0) itemIds.add(cell.bg)
+      }
+    }
+    if (duplicateGhost) {
+      for (const { cell } of duplicateGhost) {
+        if (cell.fg !== 0) itemIds.add(cell.fg)
+        if (cell.bg !== 0) itemIds.add(cell.bg)
+      }
+    }
 
-        Promise.all(
-            [...itemIds].map(async id => {
-            const texture = await getItemTexture(id)
-            return texture ? [id, texture] as [number, Texture] : null
-            })
-        ).then(results => {
-            setTextures(prev => {
-            const next = new Map(prev)
-            for (const r of results) {
-                if (r) next.set(r[0], r[1])
-            }
-            return next
-            })
-        })
-    }, [grid, duplicateGhost])
+    Promise.all(
+      [...itemIds].map(async id => {
+        const texture = await getItemTexture(id)
+        return texture ? [id, texture] as [number, Texture] : null
+      })
+    ).then(results => {
+      setTextures(prev => {
+        const next = new Map(prev)
+        for (const r of results) {
+          if (r) next.set(r[0], r[1])
+        }
+        return next
+      })
+    })
+  }, [grid, duplicateGhost])
 
   // ── Sprite rendering ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -237,7 +242,7 @@ function GridRenderer({
     }
   }, [grid, offset, zoom, canvasWidth, canvasHeight, textures])
 
-  // ── Ghost sprite rendering (duplicate preview) ────────────────────────────
+  // ── Ghost sprite rendering ────────────────────────────────────────────────
   useEffect(() => {
     const c = ghostContainerRef.current
     if (!c) return
@@ -269,7 +274,7 @@ function GridRenderer({
     }
   }, [duplicateGhost, offset, zoom, canvasWidth, canvasHeight, textures])
 
-  // ── Selection overlay rendering ───────────────────────────────────────────
+  // ── Selection overlay ─────────────────────────────────────────────────────
   const drawSelection = useCallback((g: Graphics) => {
     g.clear()
     if (!selection) return
@@ -284,17 +289,22 @@ function GridRenderer({
 
     g.rect(x, y, w, h)
     g.fill({ color: 0x4488ff, alpha: 0.2 })
-
     g.setStrokeStyle({ width: 2, color: 0x4488ff, alpha: 0.9 })
     g.rect(x, y, w, h)
     g.stroke()
   }, [selection, offset, zoom])
 
-  // ── Pointer events ────────────────────────────────────────────────────────
+  // ── Pointer / touch state ─────────────────────────────────────────────────
   const isPanning = useRef(false)
   const lastMouse = useRef({ x: 0, y: 0 })
   const isDrawing = useRef(false)
   const isSelecting = useRef(false)
+
+  // Pinch state
+  const isPinching = useRef(false)
+  const lastPinchDist = useRef(0)
+  const lastPinchMid = useRef({ x: 0, y: 0 })
+
   const stateRef = useRef({ offset, zoom, activeTool })
   const minZoomRef = useRef(Math.min(
     canvasWidth / (WORLD_COLS * TILE_SIZE),
@@ -323,11 +333,32 @@ function GridRenderer({
   const inBounds = (row: number, col: number) =>
     row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS
 
+  // ── Apply a zoom step around an arbitrary canvas point ───────────────────
+  const applyZoom = useCallback((newZoom: number, pivotX: number, pivotY: number) => {
+    const clamped = Math.min(8, Math.max(minZoomRef.current, newZoom))
+    const prevZoom = stateRef.current.zoom
+    const prev = stateRef.current.offset
+
+    setOffset({
+      x: pivotX - (pivotX - prev.x) * (clamped / prevZoom),
+      y: pivotY - (pivotY - prev.y) * (clamped / prevZoom),
+    })
+    setZoom(clamped)
+    setStoreZoom(clamped)
+    prevStoreZoomRef.current = clamped
+  }, [setStoreZoom])
+
+  // ── Pointer events ────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = app?.canvas
     if (!canvas) return
 
+    // ── Pointer (mouse / stylus) ──────────────────────────────────────────
+
     const onPointerDown = (e: PointerEvent) => {
+      // Ignore pointer events that are part of a pinch gesture
+      if (e.pointerType === 'touch') return
+
       const rect = canvas.getBoundingClientRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
@@ -355,24 +386,22 @@ function GridRenderer({
       if (activeTool === 'select') {
         isSelecting.current = true
         startSelection(row, col)
-      }
-      else if (activeTool === 'fill') {
+      } else if (activeTool === 'fill') {
         fillGrid(row, col)
-      }
-      else if (activeTool === 'draw') {
+      } else if (activeTool === 'draw') {
         isDrawing.current = true
         setCell(row, col)
-      }
-      else if (activeTool === 'erase') {
+      } else if (activeTool === 'erase') {
         isDrawing.current = true
         eraseCell(row, col)
-      }
-      else if (activeTool === 'picker') {
+      } else if (activeTool === 'picker') {
         pickItem(row, col)
       }
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return
+
       const rect = canvas.getBoundingClientRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
@@ -383,9 +412,7 @@ function GridRenderer({
         return
       }
 
-      if (inBounds(row, col)) {
-        setMouseGridPosition(col, row)
-      }
+      if (inBounds(row, col)) setMouseGridPosition(col, row)
 
       if (isPanning.current) {
         const dx = e.clientX - lastMouse.current.x
@@ -400,8 +427,7 @@ function GridRenderer({
         return
       }
 
-      if (!isDrawing.current) return
-      if (!inBounds(row, col)) return
+      if (!isDrawing.current || !inBounds(row, col)) return
 
       const { activeTool } = stateRef.current
       if (activeTool === 'draw') setCell(row, col)
@@ -421,37 +447,217 @@ function GridRenderer({
       isDrawing.current = false
     }
 
+    // ── Touch events (mobile) ─────────────────────────────────────────────
+
+    const getTouchPos = (t: Touch) => {
+      const rect = canvas.getBoundingClientRect()
+      return { x: t.clientX - rect.left, y: t.clientY - rect.top }
+    }
+
+    const getPinchDist = (t0: Touch, t1: Touch) => {
+      const dx = t1.clientX - t0.clientX
+      const dy = t1.clientY - t0.clientY
+      return Math.sqrt(dx * dx + dy * dy)
+    }
+
+    const getPinchMid = (t0: Touch, t1: Touch) => {
+      const rect = canvas.getBoundingClientRect()
+      return {
+        x: (t0.clientX + t1.clientX) / 2 - rect.left,
+        y: (t0.clientY + t1.clientY) / 2 - rect.top,
+      }
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Two fingers — begin pinch; cancel any ongoing draw/pan
+        e.preventDefault()
+        isPinching.current = true
+        isDrawing.current = false
+        isPanning.current = false
+        isSelecting.current = false
+
+        const t0 = e.touches[0]
+        const t1 = e.touches[1]
+        lastPinchDist.current = getPinchDist(t0, t1)
+        lastPinchMid.current = getPinchMid(t0, t1)
+        return
+      }
+
+      if (e.touches.length === 1 && !isPinching.current) {
+        // Single finger — mirror pointer-down logic
+        e.preventDefault()
+        const touch = e.touches[0]
+        const pos = getTouchPos(touch)
+        const { row, col } = screenToCell(pos.x, pos.y)
+        const { activeTool } = stateRef.current
+
+        const { selection } = useGridStore.getState()
+        if (activeTool === 'select' && selection &&
+            row >= selection.startRow && row <= selection.endRow &&
+            col >= selection.startCol && col <= selection.endCol) {
+          isMovingSelection.current = true
+          moveSelectionStart(row, col)
+          return
+        }
+
+        if (activeTool === 'move') {
+          isPanning.current = true
+          lastMouse.current = { x: touch.clientX, y: touch.clientY }
+          return
+        }
+
+        if (!inBounds(row, col)) return
+
+        if (activeTool === 'select') {
+          isSelecting.current = true
+          startSelection(row, col)
+        } else if (activeTool === 'fill') {
+          fillGrid(row, col)
+        } else if (activeTool === 'draw') {
+          isDrawing.current = true
+          setCell(row, col)
+        } else if (activeTool === 'erase') {
+          isDrawing.current = true
+          eraseCell(row, col)
+        } else if (activeTool === 'picker') {
+          pickItem(row, col)
+        }
+      }
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault()
+
+      if (e.touches.length === 2 && isPinching.current) {
+        const t0 = e.touches[0]
+        const t1 = e.touches[1]
+        const newDist = getPinchDist(t0, t1)
+        const newMid = getPinchMid(t0, t1)
+
+        const factor = newDist / lastPinchDist.current
+        const newZoom = Math.min(8, Math.max(minZoomRef.current, stateRef.current.zoom * factor))
+
+        // Pan by midpoint delta
+        const dx = newMid.x - lastPinchMid.current.x
+        const dy = newMid.y - lastPinchMid.current.y
+        const prev = stateRef.current.offset
+        const prevZoom = stateRef.current.zoom
+
+        const newOffset = {
+          x: newMid.x - (newMid.x - prev.x) * (newZoom / prevZoom) + dx,
+          y: newMid.y - (newMid.y - prev.y) * (newZoom / prevZoom) + dy,
+        }
+
+        setOffset(newOffset)
+        setZoom(newZoom)
+        setStoreZoom(newZoom)
+        prevStoreZoomRef.current = newZoom
+
+        lastPinchDist.current = newDist
+        lastPinchMid.current = newMid
+        return
+      }
+
+      if (e.touches.length === 1 && !isPinching.current) {
+        const touch = e.touches[0]
+        const pos = getTouchPos(touch)
+        const { row, col } = screenToCell(pos.x, pos.y)
+
+        if (isMovingSelection.current) {
+          if (inBounds(row, col)) moveSelectionUpdate(row, col)
+          return
+        }
+
+        if (inBounds(row, col)) setMouseGridPosition(col, row)
+
+        if (isPanning.current) {
+          const dx = touch.clientX - lastMouse.current.x
+          const dy = touch.clientY - lastMouse.current.y
+          lastMouse.current = { x: touch.clientX, y: touch.clientY }
+          setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }))
+          return
+        }
+
+        if (isSelecting.current) {
+          if (inBounds(row, col)) updateSelection(row, col)
+          return
+        }
+
+        if (!isDrawing.current || !inBounds(row, col)) return
+        const { activeTool } = stateRef.current
+        if (activeTool === 'draw') setCell(row, col)
+        else if (activeTool === 'erase') eraseCell(row, col)
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        // Released one or both fingers from a pinch
+        if (isPinching.current) {
+          isPinching.current = false
+          // Small delay so the remaining finger doesn't accidentally draw
+          setTimeout(() => {
+            isDrawing.current = false
+            isPanning.current = false
+          }, 50)
+          return
+        }
+      }
+
+      if (e.touches.length === 0) {
+        if (isSelecting.current) {
+          endSelection()
+          isSelecting.current = false
+        }
+        if (isMovingSelection.current) {
+          moveSelectionCommit()
+          isMovingSelection.current = false
+        }
+        isPanning.current = false
+        isDrawing.current = false
+      }
+    }
+
+    // ── Wheel (desktop scroll-to-zoom) ────────────────────────────────────
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const factor = e.deltaY < 0 ? 1.1 : 0.9
-      const newZoom = Math.min(8, Math.max(minZoomRef.current, stateRef.current.zoom * factor))
-
       const rect = canvas.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-
-      setOffset(prev => ({
-        x: mx - (mx - prev.x) * (newZoom / stateRef.current.zoom),
-        y: my - (my - prev.y) * (newZoom / stateRef.current.zoom),
-      }))
-      setZoom(newZoom)
-      setStoreZoom(newZoom)
-      prevStoreZoomRef.current = newZoom
+      const factor = e.deltaY < 0 ? 1.1 : 0.9
+      applyZoom(stateRef.current.zoom * factor, mx, my)
     }
 
     canvas.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
+
+    // Touch listeners on canvas with { passive: false } so we can preventDefault
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false })
+
     canvas.addEventListener('wheel', onWheel, { passive: false })
-    canvas.addEventListener('contextmenu', e => e.preventDefault())
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('touchstart', onTouchStart)
+      canvas.removeEventListener('touchmove', onTouchMove)
+      canvas.removeEventListener('touchend', onTouchEnd)
       canvas.removeEventListener('wheel', onWheel)
     }
-  }, [app, setCell, eraseCell, fillGrid, pickItem, startSelection, updateSelection, endSelection, setMouseGridPosition, setStoreZoom])
+  }, [
+    app, applyZoom,
+    setCell, eraseCell, fillGrid, pickItem,
+    startSelection, updateSelection, endSelection,
+    setMouseGridPosition, setStoreZoom,
+    moveSelectionStart, moveSelectionUpdate, moveSelectionCommit,
+  ])
 
   // ── Cursor style ──────────────────────────────────────────────────────────
   useEffect(() => {
