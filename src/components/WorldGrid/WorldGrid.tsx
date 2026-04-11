@@ -13,7 +13,7 @@ const atlasTextureCache = new Map<string, Texture>()
 const frameTextureCache = new Map<number, Texture>()
 
 async function getItemTexture(id: number): Promise<Texture | null> {
-  if (frameTextureCache.has(id)) return frameTextureCache.get(id)!
+if (frameTextureCache.has(id)) return frameTextureCache.get(id)!
 
   const item = getItemById(id)
   if (!item) return null
@@ -25,11 +25,13 @@ async function getItemTexture(id: number): Promise<Texture | null> {
     atlasTextureCache.set(item.atlas, atlasTexture)
   }
 
+  const resolvedAtlas = atlasTexture!
+
   // Flip Y — manifest uses OpenGL bottom-up, PixiJS is top-down
-  const flippedY = atlasTexture.height - item.y - item.h
+  const flippedY = resolvedAtlas.height - item.y - item.h
 
   const frame = new Texture({
-    source: atlasTexture.source,
+    source: resolvedAtlas.source,
     frame: new Rectangle(item.x, flippedY, item.w, item.h),
   })
 
