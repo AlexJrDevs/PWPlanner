@@ -16,15 +16,24 @@ const isDev = import.meta.env.DEV
 export default function AdBanner({ adSlot, adFormat = 'auto' }: Props) {
   const insRef = useRef<HTMLModElement>(null)
 
-  useEffect(() => {
-    if (!insRef.current || isDev) return
-    if (insRef.current.offsetWidth === 0) return
-    try {
-      (window.adsbygoogle = window.adsbygoogle || []).push({})
-    } catch (e) {
-      console.error('AdSense error:', e)
-    }
-  }, [adSlot])
+    useEffect(() => {
+        if (!insRef.current || isDev) return
+
+        const el = insRef.current
+
+        const observer = new ResizeObserver(() => {
+            if (el.offsetWidth === 0) return
+            observer.disconnect()
+            try {
+            (window.adsbygoogle = window.adsbygoogle || []).push({})
+            } catch (e) {
+            console.error('AdSense error:', e)
+            }
+        })
+
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [adSlot])
 
   const isHorizontal = adFormat === 'horizontal'
 
