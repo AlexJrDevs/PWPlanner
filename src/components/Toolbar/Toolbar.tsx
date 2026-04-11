@@ -47,7 +47,7 @@ export default function Toolbar() {
     { id: 'select', label: 'Select',      icon: '↖️' },
     { id: 'draw',   label: 'Draw',        icon: '✏️' },
     { id: 'erase',  label: 'Erase',       icon: '🧼' },
-    { id: 'picker', label: 'Picker',      icon: '💧' },
+    { id: 'picker', label: 'Picker',      icon: '📌' },
     { id: 'fill',   label: 'Flood Fill',  icon: '🪣' },
   ]
   
@@ -116,10 +116,10 @@ export default function Toolbar() {
           </div>
           <div className="flex gap-2">
             <span className="text-blue-400">
-              F: {fgItem ? <span className="text-blue-200">{fgItem.name}</span> : <span className="text-gray-600">Empty</span>}
+              F: {fgItem ? <span className="text-blue-200">{fgItem.block_name}</span> : <span className="text-gray-600">Empty</span>}
             </span>
             <span className="text-purple-400">
-              B: {bgItem ? <span className="text-purple-200">{bgItem.name}</span> : <span className="text-gray-600">Empty</span>}
+              B: {bgItem ? <span className="text-purple-200">{bgItem.block_name}</span> : <span className="text-gray-600">Empty</span>}
             </span>
           </div>
         </div>

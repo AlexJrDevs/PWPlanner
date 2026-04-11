@@ -1,19 +1,40 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Application, extend, useApplication } from '@pixi/react'
-import { Graphics, Assets, Texture, Sprite, Container } from 'pixi.js'
+import { Graphics, Assets, Texture, Sprite, Container, Rectangle } from 'pixi.js'
 
 import { useGridStore, TILE_SIZE, WORLD_COLS, WORLD_ROWS } from '../../stores/gridStore'
 import { getItemById } from '../../data/items'
 
 extend({ Graphics, Sprite, Container })
 
-const textureCache = new Map<string, Texture>()
 
-async function loadTexture(spritePath: string): Promise<Texture> {
-  if (textureCache.has(spritePath)) return textureCache.get(spritePath)!
-  const texture = await Assets.load(spritePath)
-  textureCache.set(spritePath, texture)
-  return texture
+const ATLAS_BASE = '/assets/'
+const atlasTextureCache = new Map<string, Texture>()
+const frameTextureCache = new Map<number, Texture>()
+
+async function getItemTexture(id: number): Promise<Texture | null> {
+  if (frameTextureCache.has(id)) return frameTextureCache.get(id)!
+
+  const item = getItemById(id)
+  if (!item) return null
+
+  // Load the atlas PNG once, reuse after
+  let atlasTexture = atlasTextureCache.get(item.atlas)
+  if (!atlasTexture) {
+    atlasTexture = await Assets.load(`${ATLAS_BASE}${item.atlas}`)
+    atlasTextureCache.set(item.atlas, atlasTexture)
+  }
+
+  // Flip Y — manifest uses OpenGL bottom-up, PixiJS is top-down
+  const flippedY = atlasTexture.height - item.y - item.h
+
+  const frame = new Texture({
+    source: atlasTexture.source,
+    frame: new Rectangle(item.x, flippedY, item.w, item.h),
+  })
+
+  frameTextureCache.set(id, frame)
+  return frame
 }
 
 export default function WorldGrid() {
@@ -53,6 +74,32 @@ export default function WorldGrid() {
       </Application>
     </div>
   )
+}
+
+/** Place a sprite at its natural pixel size, centred inside a tileW×tileH cell. */
+function placeSpriteInTile(
+  sprite: Sprite,
+  cellX: number,
+  cellY: number,
+  tileW: number,
+  tileH: number,
+) {
+  // Natural size of this sprite's source rect (already cropped by the Texture frame)
+  const naturalW = sprite.texture.width
+  const naturalH = sprite.texture.height
+
+  // Scale so it fits inside the tile without stretching
+  const scale = Math.min(tileW / naturalW, tileH / naturalH)
+
+  const drawW = naturalW * scale
+  const drawH = naturalH * scale
+
+  sprite.width = drawW
+  sprite.height = drawH
+
+  // Centre inside the cell
+  sprite.x = cellX + (tileW - drawW) / 2
+  sprite.y = cellY + (tileH - drawH)
 }
 
 function GridRenderer({
@@ -127,39 +174,36 @@ function GridRenderer({
   }, [storeZoom])
 
   // ── Texture loading ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const itemIds = new Set<number>()
-    for (const row of grid) {
-      for (const cell of row) {
-        if (cell.fg !== 0) itemIds.add(cell.fg)
-        if (cell.bg !== 0) itemIds.add(cell.bg)
-      }
-    }
-    // Also load textures for ghost cells
-    if (duplicateGhost) {
-      for (const { cell } of duplicateGhost) {
-        if (cell.fg !== 0) itemIds.add(cell.fg)
-        if (cell.bg !== 0) itemIds.add(cell.bg)
-      }
-    }
-
-    Promise.all(
-      [...itemIds].map(async id => {
-        const item = getItemById(id)
-        if (!item) return null
-        const texture = await loadTexture(item.sprite)
-        return [id, texture] as [number, Texture]
-      })
-    ).then(results => {
-      setTextures(prev => {
-        const next = new Map(prev)
-        for (const r of results) {
-          if (r) next.set(r[0], r[1])
+    useEffect(() => {
+        const itemIds = new Set<number>()
+        for (const row of grid) {
+            for (const cell of row) {
+            if (cell.fg !== 0) itemIds.add(cell.fg)
+            if (cell.bg !== 0) itemIds.add(cell.bg)
+            }
         }
-        return next
-      })
-    })
-  }, [grid, duplicateGhost])
+        if (duplicateGhost) {
+            for (const { cell } of duplicateGhost) {
+            if (cell.fg !== 0) itemIds.add(cell.fg)
+            if (cell.bg !== 0) itemIds.add(cell.bg)
+            }
+        }
+
+        Promise.all(
+            [...itemIds].map(async id => {
+            const texture = await getItemTexture(id)
+            return texture ? [id, texture] as [number, Texture] : null
+            })
+        ).then(results => {
+            setTextures(prev => {
+            const next = new Map(prev)
+            for (const r of results) {
+                if (r) next.set(r[0], r[1])
+            }
+            return next
+            })
+        })
+    }, [grid, duplicateGhost])
 
   // ── Sprite rendering ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -173,21 +217,18 @@ function GridRenderer({
     for (let row = 0; row < WORLD_ROWS; row++) {
       for (let col = 0; col < WORLD_COLS; col++) {
         const cell = grid[row][col]
-        const x = offset.x + col * tileW
-        const y = offset.y + row * tileH
+        const cellX = offset.x + col * tileW
+        const cellY = offset.y + row * tileH
 
-        if (x + tileW < 0 || x > canvasWidth || y + tileH < 0 || y > canvasHeight) continue
+        if (cellX + tileW < 0 || cellX > canvasWidth || cellY + tileH < 0 || cellY > canvasHeight) continue
 
         for (const id of [cell.bg, cell.fg]) {
           if (id === 0) continue
           const texture = textures.get(id)
           if (!texture) continue
           const sprite = new Sprite(texture)
-          sprite.x = x
-          sprite.y = y
-          sprite.width = tileW
-          sprite.height = tileH
           sprite.roundPixels = true
+          placeSpriteInTile(sprite, cellX, cellY, tileW, tileH)
           c.addChild(sprite)
         }
       }
@@ -209,21 +250,18 @@ function GridRenderer({
     const tileH = TILE_SIZE * zoom
 
     for (const { row, col, cell } of duplicateGhost) {
-      const x = offset.x + col * tileW
-      const y = offset.y + row * tileH
+      const cellX = offset.x + col * tileW
+      const cellY = offset.y + row * tileH
 
-      if (x + tileW < 0 || x > canvasWidth || y + tileH < 0 || y > canvasHeight) continue
+      if (cellX + tileW < 0 || cellX > canvasWidth || cellY + tileH < 0 || cellY > canvasHeight) continue
 
       for (const id of [cell.bg, cell.fg]) {
         if (id === 0) continue
         const texture = textures.get(id)
         if (!texture) continue
         const sprite = new Sprite(texture)
-        sprite.x = x
-        sprite.y = y
-        sprite.width = tileW
-        sprite.height = tileH
         sprite.roundPixels = true
+        placeSpriteInTile(sprite, cellX, cellY, tileW, tileH)
         c.addChild(sprite)
       }
     }
@@ -415,7 +453,7 @@ function GridRenderer({
 
   // ── Cursor style ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const canvas = app.canvas
+    const canvas = app?.canvas
     if (!canvas) return
     const cursors: Record<string, string> = {
       move: 'grab',

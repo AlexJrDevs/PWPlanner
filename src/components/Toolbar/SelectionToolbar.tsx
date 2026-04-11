@@ -29,9 +29,9 @@ export default function SelectionToolbar() {
         <button
           onClick={duplicateSelection}
           className="px-3 py-1 text-xs bg-blue-900/80 hover:bg-blue-800 border border-blue-700 rounded transition-colors"
-          title="Duplicate selection (copies tiles offset by 1)"
+          title="Clone selection (copies tiles offset by 1)"
         >
-          Duplicate
+          Clone
         </button>
 
         <button

@@ -1,11 +1,5 @@
-import { useGridStore} from '../../stores/gridStore'
+import { useGridStore } from '../../stores/gridStore'
 
-/**
- * ViewToolbar
- * Rendered directly below the main Toolbar when activeTool === 'move'.
- * Provides zoom in / zoom out / reset controls, with a live zoom % readout.
- * The parent layout should place this between <Toolbar> and <WorldGrid>.
- */
 export default function ViewToolbar() {
   const { zoom, setZoom } = useGridStore()
 
@@ -19,29 +13,26 @@ export default function ViewToolbar() {
     <button
       onClick={onClick}
       title={title}
-      className="flex items-center gap-1.5 px-3 h-8 rounded border border-gray-600 bg-[#252525]
+      className="flex items-center gap-1 px-2 sm:px-3 h-7 sm:h-8 rounded border border-gray-600 bg-[#252525]
                  hover:bg-[#333] hover:border-gray-400 active:scale-95
-                 text-gray-200 text-sm font-mono transition-all select-none"
+                 text-gray-200 text-xs sm:text-sm font-mono transition-all select-none shrink-0"
     >
-      <span className="text-base leading-none">{icon}</span>
-      <span>{label}</span>
+      <span className="text-sm sm:text-base leading-none">{icon}</span>
+      <span className="hidden sm:inline">{label}</span>
     </button>
   )
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 bg-[#141414] border-b border-gray-700/60">
-      {/* Label */}
-      <span className="text-[11px] uppercase tracking-widest text-gray-500 mr-1 select-none">
+    <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-[#141414] border-b border-gray-700/60 overflow-x-auto">
+      <span className="text-[10px] uppercase tracking-widest text-gray-500 mr-1 select-none shrink-0">
         View
       </span>
 
-      {/* Zoom controls */}
-      {btn('Zoom In',  '🔍', zoomIn,    'Zoom in  (also scroll up on canvas)')}
-      {btn('Zoom Out', '🔎', zoomOut,   'Zoom out (also scroll down on canvas)')}
-    
+      {btn('Zoom In',  '🔍', zoomIn,  'Zoom in')}
+      {btn('Zoom Out', '🔎', zoomOut, 'Zoom out')}
 
-      <span className="text-[10px] text-gray-600 ml-auto select-none">
-        Scroll on canvas to zoom · Middle-drag to pan
+      <span className="text-[10px] text-gray-600 ml-auto select-none hidden md:block shrink-0">
+        Scroll to zoom · Middle-drag to pan
       </span>
     </div>
   )

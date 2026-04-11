@@ -1,8 +1,68 @@
+import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useGridStore, WORLD_COLS, WORLD_ROWS } from '../../stores/gridStore'
 import { getItemById } from '../../data/items'
+import type { Item } from '../../data/types'
 
-const TILE_SIZE = 32   // 256 / 8 = 32  (your original intent)
+const TILE_SIZE = 32
+const ATLAS_SIZE = 1024
+
+// Shared image cache
+const imageCache = new Map<string, HTMLImageElement>()
+
+function loadAtlasImage(atlas: string): Promise<HTMLImageElement> {
+  if (imageCache.has(atlas)) return Promise.resolve(imageCache.get(atlas)!)
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => { imageCache.set(atlas, img); resolve(img) }
+    img.onerror = reject
+    img.src = `/assets/${atlas}`
+  })
+}
+
+/**
+ * Draws exactly the item's source rect — no neighbouring sprite bleed.
+ * Scaled to fit `displaySize`, centred horizontally, bottom-aligned.
+ */
+function SpriteCanvas({ item, displaySize }: { item: Item; displaySize: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef?.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    let cancelled = false
+
+    loadAtlasImage(item.atlas).then((img) => {
+      if (cancelled) return
+      ctx.clearRect(0, 0, displaySize, displaySize)
+
+      const flippedY = ATLAS_SIZE - item.y - item.h
+      const scale = Math.min(displaySize / item.w, displaySize / item.h)
+      const drawW = item.w * scale
+      const drawH = item.h * scale
+
+      const destX = (displaySize - drawW) / 2
+      const destY = displaySize - drawH   // bottom-aligned
+
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(img, item.x, flippedY, item.w, item.h, destX, destY, drawW, drawH)
+    }).catch(() => { /* missing atlas */ })
+
+    return () => { cancelled = true }
+  }, [item, displaySize])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={displaySize}
+      height={displaySize}
+      style={{ imageRendering: 'pixelated', display: 'block' }}
+    />
+  )
+}
 
 interface Props {
   onClose: () => void
@@ -11,7 +71,6 @@ interface Props {
 export default function MapModal({ onClose }: Props) {
   const { grid } = useGridStore()
 
-  // Count all placed items (fg + bg)
   const counts = new Map<number, number>()
   for (const row of grid) {
     for (const cell of row) {
@@ -31,71 +90,54 @@ export default function MapModal({ onClose }: Props) {
     canvas.height = WORLD_ROWS * TILE_SIZE
     const ctx = canvas.getContext('2d', { alpha: false })!
 
-    // Optional dark background (remove or change if you want transparent)
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    const imageCache = new Map<string, HTMLImageElement>()
+    /**
+     * Draw one item into a TILE_SIZE × TILE_SIZE cell using drawImage so only
+     * the exact source rect is sampled — no bleed from neighbours.
+     * The sprite is scaled to fit, bottom-aligned (matching WorldGrid).
+     */
+    const drawItemInTile = async (itemId: number, cellX: number, cellY: number) => {
+      const item = getItemById(itemId)
+      if (!item) return
+      try {
+        const img = await loadAtlasImage(item.atlas)
+        const flippedY = img.height - item.y - item.h
 
-    const loadImage = (src: string): Promise<HTMLImageElement> => {
-      if (imageCache.has(src)) return Promise.resolve(imageCache.get(src)!)
+        const scale = Math.min(TILE_SIZE / item.w, TILE_SIZE / item.h)
+        const drawW = item.w * scale
+        const drawH = item.h * scale
 
-      return new Promise((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => {
-          imageCache.set(src, img)
-          resolve(img)
-        }
-        img.onerror = reject
-        img.src = src
-      })
+        const destX = cellX + (TILE_SIZE - drawW) / 2
+        const destY = cellY + (TILE_SIZE - drawH)   // bottom-aligned
+
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(img, item.x, flippedY, item.w, item.h, destX, destY, drawW, drawH)
+      } catch {
+        console.warn(`Failed to load atlas for item ${itemId}`)
+      }
     }
 
-    // Draw background layer first, then foreground
     for (let r = 0; r < WORLD_ROWS; r++) {
       for (let c = 0; c < WORLD_COLS; c++) {
         const cell = grid[r][c]
         const x = c * TILE_SIZE
         const y = r * TILE_SIZE
-
-        // Background first
-        if (cell.bg !== 0) {
-          const item = getItemById(cell.bg)
-          if (item?.sprite) {
-            try {
-              const img = await loadImage(item.sprite)
-              ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE)
-            } catch (e) {
-              console.warn(`Failed to load bg sprite ${item.sprite}`)
-            }
-          }
-        }
-
-        // Foreground on top
-        if (cell.fg !== 0) {
-          const item = getItemById(cell.fg)
-          if (item?.sprite) {
-            try {
-              const img = await loadImage(item.sprite)
-              ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE)
-            } catch (e) {
-              console.warn(`Failed to load fg sprite ${item.sprite}`)
-            }
-          }
-        }
+        if (cell.bg !== 0) await drawItemInTile(cell.bg, x, y)
+        if (cell.fg !== 0) await drawItemInTile(cell.fg, x, y)
       }
     }
 
-    // Download as PNG
     canvas.toBlob((blob) => {
       if (!blob) return
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'world.png'          // Changed filename to match what we actually export
+      a.download = 'world.png'
       a.click()
       URL.revokeObjectURL(url)
-    }, 'image/png', 1.0)   // quality only matters for jpeg/webp
+    }, 'image/png', 1.0)
   }
 
   return createPortal(
@@ -105,7 +147,6 @@ export default function MapModal({ onClose }: Props) {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="bg-[#141414] border border-gray-700/80 rounded-2xl w-full max-w-[500px] max-h-[640px] flex flex-col overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <div>
             <h2 className="text-lg font-semibold text-gray-100">Map Summary</h2>
@@ -121,7 +162,6 @@ export default function MapModal({ onClose }: Props) {
           </button>
         </div>
 
-        {/* Item list */}
         <div className="flex-1 overflow-y-auto p-4">
           {entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-gray-500 gap-2">
@@ -135,19 +175,10 @@ export default function MapModal({ onClose }: Props) {
                   key={id}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#1e1e1e] hover:bg-[#252525]"
                 >
-                  <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-black/30 rounded-md overflow-hidden">
-                    {item.sprite ? (
-                      <img
-                        src={item.sprite}
-                        alt={item.name}
-                        className="w-full h-full object-contain"
-                        style={{ imageRendering: 'pixelated' }}
-                      />
-                    ) : (
-                      <span>❓</span>
-                    )}
+                  <div className="w-8 h-8 shrink-0 rounded-md bg-black/30 overflow-hidden">
+                    <SpriteCanvas item={item} displaySize={32} />
                   </div>
-                  <span className="flex-1 text-sm text-gray-200 font-mono">{item.name}</span>
+                  <span className="flex-1 text-sm text-gray-200 font-mono">{item.block_name}</span>
                   <span className="text-xs text-gray-500 font-mono">{item.category}</span>
                   <span className="text-sm font-semibold text-orange-400 font-mono w-12 text-right">
                     ×{count}
@@ -158,7 +189,6 @@ export default function MapModal({ onClose }: Props) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-800 bg-[#0a0a0a] flex justify-between items-center">
           <span className="text-xs text-gray-500">
             Total placed: {[...counts.values()].reduce((a, b) => a + b, 0)} blocks

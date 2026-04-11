@@ -1,33 +1,12 @@
-export type ItemCategory = 'block' | 'background' | 'cosmetic' | 'prop'
-
-export type CosmeticSlot =
-    | 'hair'
-    | 'hat'
-    | 'Mask'
-    | 'Hood'
-    | 'Lense'
-    | 'Accessorie'
-    | 'Shirt'
-    | 'Hoodie'
-    | 'Outfit'
-    | 'Dress'
-    | 'Pants'
-    | 'Tights'
-    | 'Skirt'
-    | 'Shoe'
-    | 'Glove'
-    | 'Weapon'
-    | 'BackHandItem'
-    | 'BackItem'
-    | 'Familiars'
-    | 'FlyingMount'
-    | null
+export type ItemCategory = 'block' | 'background' | 'prop' | 'wearable' | 'weapon' | 'character' | 'none' | 'unknown'
 
 export interface Item {
-  id: number
-  name: string
-  sprite: string
+  id: number 
+  block_name: string
   category: ItemCategory
-  cosmeticSlot?: CosmeticSlot
-  stackable?: boolean
+  atlas: string
+  x: number
+  y: number
+  w: number
+  h: number
 }

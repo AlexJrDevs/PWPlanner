@@ -1,15 +1,21 @@
-import { items } from './generated/sprites'
-export { items }
+import manifestRaw from './generated/manifest.json'
+import type { Item, ItemCategory } from './types'
 
-export type { ItemCategory, CosmeticSlot, Item } from './types'
+export type { Item, ItemCategory } from './types'
 
-import type { Item, ItemCategory, CosmeticSlot } from './types'
+const manifestJson = Array.isArray(manifestRaw) ? manifestRaw : (manifestRaw as any).default ?? manifestRaw
+export const items = manifestJson as Item[]
 
-export const getItemById = (id: number): Item | undefined =>
-  items.find(item => item.id === id)
+// O(1) indexes built once at startup
+const byId = new Map<number, Item>(items.map(item => [Number(item.id), item]))
+const byCategory = new Map<ItemCategory, Item[]>()
 
+for (const item of items) {
+  const bucket = byCategory.get(item.category) ?? []
+  bucket.push(item)
+  byCategory.set(item.category, bucket)
+}
+
+export const getItemById = (id: number): Item | undefined => byId.get(id)
 export const getItemsByCategory = (category: ItemCategory): Item[] =>
-  items.filter(item => item.category === category)
-
-export const getItemsBySlot = (slot: CosmeticSlot): Item[] =>
-  items.filter(item => item.cosmeticSlot === slot)
+  byCategory.get(category) ?? []
