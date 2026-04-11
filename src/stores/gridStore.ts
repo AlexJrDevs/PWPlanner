@@ -57,10 +57,30 @@ interface GridStore {
   anchorRow: number
   anchorCol: number
 
+  // selectionSnapshot: frozen copy of selected cells captured the moment the
+  // selection drag ends (endSelection). All move/delete/clone ops read from this,
+  // never from the live grid, so tiles painted after the selection is drawn can
+  // never retroactively join the selection.
+  selectionSnapshot: { row: number; col: number; cell: GridCell }[] | null
+
+  // selectionUnderGrid: what the grid had at each snapshot position BEFORE the
+  // selection was dropped there. Used to restore those cells when the user starts
+  // a second move, so tiles beneath the selection are never permanently erased.
+  selectionUnderGrid: { row: number; col: number; cell: GridCell }[] | null
+
+  // selectionClipboard: original cells lifted from the grid at move-start.
+  // selectionMoveAnchor: the grid cell the user first clicked to begin the move.
+  // selectionMoveDelta: current (dr, dc) offset from anchor.
+  // selectionBaseGrid: snapshot of the grid with the selection area blanked out,
+  //   used as the stable base during a move so we never corrupt non-selected tiles.
   selectionClipboard: { row: number; col: number; cell: GridCell }[] | null
   selectionMoveAnchor: { row: number; col: number } | null
   selectionMoveDelta: { dr: number; dc: number }
+  selectionBaseGrid: Grid | null
 
+  // duplicateGhost is used for the Clone flow (separate from move).
+  // During a move, duplicateGhost holds the in-flight ghost so the renderer
+  // can draw the floating tiles without touching the real grid.
   duplicateGhost: GhostCell[] | null
   duplicateGhostSelection: { startRow: number; startCol: number; endRow: number; endCol: number } | null
   duplicateGhostLayer: Layer | null
@@ -102,6 +122,11 @@ interface GridStore {
 
 const cloneGrid = (g: Grid): Grid => g.map(r => r.map(c => ({ ...c })))
 
+/**
+ * Composites a ghost array onto a base grid and returns a new grid.
+ * Non-zero fg/bg values in the ghost overwrite the base; zero values are
+ * transparent (they leave whatever was already in the base intact).
+ */
 const applyGhost = (grid: Grid, ghost: GhostCell[]): Grid => {
   const next = cloneGrid(grid)
   for (const { row, col, cell } of ghost) {
@@ -135,9 +160,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
   anchorRow: 0,
   anchorCol: 0,
 
+  selectionSnapshot: null,
+  selectionUnderGrid: null,
+
   selectionClipboard: null,
   selectionMoveAnchor: null,
   selectionMoveDelta: { dr: 0, dc: 0 },
+  selectionBaseGrid: null,
 
   duplicateGhost: null,
   duplicateGhostSelection: null,
@@ -235,13 +264,20 @@ export const useGridStore = create<GridStore>((set, get) => ({
   // ── Selection ──────────────────────────────────────────────────────────────
 
   startSelection: (row, col) => {
-    // FIX: commit any pending ghost and fully reset selection state before
-    // starting a new selection, so old clipboard/ghost never bleeds through.
-    const { duplicateGhost, grid } = get()
+    // Commit any pending ghost/move before starting a fresh selection.
+    const { duplicateGhost, selectionClipboard, selectionBaseGrid, selectionMoveDelta, grid } = get()
 
     let baseGrid = grid
-    if (duplicateGhost) {
-      // Commit ghost into grid silently (no history — user is starting fresh)
+
+    if (selectionClipboard && selectionBaseGrid) {
+      // A move was in progress — commit it by applying the ghost to the base.
+      const ghost: GhostCell[] = selectionClipboard.map(({ row: r, col: c, cell }) => ({
+        row: r + selectionMoveDelta.dr,
+        col: c + selectionMoveDelta.dc,
+        cell,
+      }))
+      baseGrid = applyGhost(selectionBaseGrid, ghost)
+    } else if (duplicateGhost) {
       baseGrid = applyGhost(grid, duplicateGhost)
     }
 
@@ -251,10 +287,12 @@ export const useGridStore = create<GridStore>((set, get) => ({
       anchorCol: col,
       selection: { startRow: row, startCol: col, endRow: row, endCol: col },
       selectedBlockCount: null,
-      // Reset all move/ghost state so nothing from the previous selection lingers
+      selectionSnapshot: null,
+      selectionUnderGrid: null,
       selectionClipboard: null,
       selectionMoveAnchor: null,
       selectionMoveDelta: { dr: 0, dc: 0 },
+      selectionBaseGrid: null,
       duplicateGhost: null,
       duplicateGhostSelection: null,
       duplicateGhostLayer: null,
@@ -278,47 +316,82 @@ export const useGridStore = create<GridStore>((set, get) => ({
     if (!selection) return
 
     let total = 0, empty = 0
+    const snapshot: { row: number; col: number; cell: GridCell }[] = []
+
     for (let r = selection.startRow; r <= selection.endRow; r++) {
       for (let c = selection.startCol; c <= selection.endCol; c++) {
         if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
         total++
         const cell = grid[r][c]
         if (cell.fg === 0 && cell.bg === 0) empty++
+        // Freeze a copy of each cell — this snapshot never changes after this point.
+        snapshot.push({ row: r, col: c, cell: { ...cell } })
       }
     }
-    set({ selectedBlockCount: { total, empty, filled: total - empty } })
+
+    set({
+      selectedBlockCount: { total, empty, filled: total - empty },
+      selectionSnapshot: snapshot,
+    })
   },
 
-  // Commits any pending ghost then clears selection state.
+  // Commits any pending ghost/move then clears selection state.
   clearSelection: () => {
-    const { duplicateGhost, grid } = get()
-    if (duplicateGhost) {
-      const next = applyGhost(grid, duplicateGhost)
+    const { duplicateGhost, selectionClipboard, selectionBaseGrid, selectionMoveDelta, grid } = get()
+
+    let finalGrid = grid
+
+    if (selectionClipboard && selectionBaseGrid) {
+      // Commit in-progress move
+      const ghost: GhostCell[] = selectionClipboard.map(({ row: r, col: c, cell }) => ({
+        row: r + selectionMoveDelta.dr,
+        col: c + selectionMoveDelta.dc,
+        cell,
+      }))
+      finalGrid = applyGhost(selectionBaseGrid, ghost)
       get().saveToHistory()
-      set({
-        grid: next,
-        duplicateGhost: null,
-        duplicateGhostSelection: null,
-        duplicateGhostLayer: null,
-      })
+    } else if (duplicateGhost) {
+      finalGrid = applyGhost(grid, duplicateGhost)
+      get().saveToHistory()
     }
+
     set({
+      grid: finalGrid,
       selection: null,
       selectedBlockCount: null,
+      selectionSnapshot: null,
+      selectionUnderGrid: null,
       selectionClipboard: null,
       selectionMoveAnchor: null,
       selectionMoveDelta: { dr: 0, dc: 0 },
+      selectionBaseGrid: null,
+      duplicateGhost: null,
+      duplicateGhostSelection: null,
+      duplicateGhostLayer: null,
     })
   },
 
   // ── Selection actions ──────────────────────────────────────────────────────
 
   deleteSelection: () => {
-    const { duplicateGhost, selection, grid } = get()
+    const { duplicateGhost, selectionClipboard, selectionBaseGrid, selection, grid, selectionSnapshot } = get()
+
+    if (selectionClipboard && selectionBaseGrid) {
+      // Cancel the in-progress move — restore the base grid (cells stay erased)
+      set({
+        grid: selectionBaseGrid,
+        selectionClipboard: null,
+        selectionMoveAnchor: null,
+        selectionMoveDelta: { dr: 0, dc: 0 },
+        selectionBaseGrid: null,
+        duplicateGhost: null,
+      })
+      get().saveToHistory()
+      return
+    }
 
     if (duplicateGhost) {
-      // FIX: discard the ghost without touching the real grid, then save so
-      // undo can restore the state before the duplicate was started.
+      // Discard the clone ghost without committing
       set({
         duplicateGhost: null,
         duplicateGhostSelection: null,
@@ -331,39 +404,73 @@ export const useGridStore = create<GridStore>((set, get) => ({
     if (!selection) return
 
     const next = cloneGrid(grid)
-    for (let r = selection.startRow; r <= selection.endRow; r++) {
-      for (let c = selection.startCol; c <= selection.endCol; c++) {
-        if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
-        next[r][c].fg = 0
-        next[r][c].bg = 0
-      }
-    }
 
-    set({ grid: next })
-    get().saveToHistory()
-  },
+
+      if (selectionSnapshot) {
+        // Only erase the exact cells that were snapshotted — never touches tiles
+        // that happened to fall inside the bounding rect but weren't selected.
+        for (const { row: r, col: c, cell } of selectionSnapshot) {
+          if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
+          // Only erase layers that the snapshot actually had content on.
+          // Skipping empty snapshot cells prevents wiping tiles painted
+          // beneath the selection after it was drawn.
+          if (cell.fg !== 0) next[r][c].fg = 0
+          if (cell.bg !== 0) next[r][c].bg = 0
+        }
+      } else {
+        // Fallback: no snapshot yet (selection just started), erase the rect
+        for (let r = selection.startRow; r <= selection.endRow; r++) {
+          for (let c = selection.startCol; c <= selection.endCol; c++) {
+            if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
+            next[r][c].fg = 0
+            next[r][c].bg = 0
+          }
+        }
+      }
+
+      set({ grid: next })
+      get().saveToHistory()
+    },
 
   duplicateSelection: () => {
-    const { duplicateGhost, selection: selectionBeforeCommit } = get()
-    if (duplicateGhost) get().commitDuplicate()
-    if (!selectionBeforeCommit) return
+    const { duplicateGhost, selectionClipboard, selectionBaseGrid, selectionMoveDelta } = get()
 
-    const { grid } = get()
-    const selection = selectionBeforeCommit
-    const ghost: GhostCell[] = []
-
-    for (let r = selection.startRow; r <= selection.endRow; r++) {
-      for (let c = selection.startCol; c <= selection.endCol; c++) {
-        const nr = r + 1
-        const nc = c + 1
-        if (nr < 0 || nr >= WORLD_ROWS || nc < 0 || nc >= WORLD_COLS) continue
-        const src = grid[r][c]
-        ghost.push({ row: nr, col: nc, cell: { fg: src.fg, bg: src.bg } })
-      }
+    // Commit any in-progress move first
+    if (selectionClipboard && selectionBaseGrid) {
+      const ghost: GhostCell[] = selectionClipboard.map(({ row: r, col: c, cell }) => ({
+        row: r + selectionMoveDelta.dr,
+        col: c + selectionMoveDelta.dc,
+        cell,
+      }))
+      const committed = applyGhost(selectionBaseGrid, ghost)
+      set({
+        grid: committed,
+        selectionClipboard: null,
+        selectionMoveAnchor: null,
+        selectionMoveDelta: { dr: 0, dc: 0 },
+        selectionBaseGrid: null,
+        duplicateGhost: null,
+      })
+      get().saveToHistory()
+    } else if (duplicateGhost) {
+      get().commitDuplicate()
     }
 
+    const { selection, selectionSnapshot } = get()
+    if (!selection) return
+
+    // Build clone from the frozen snapshot — tiles drawn after selection are excluded.
+    const cloneGhost: GhostCell[] = (selectionSnapshot ?? [])
+      .map(({ row: r, col: c, cell }) => {
+        const nr = r + 1
+        const nc = c + 1
+        if (nr < 0 || nr >= WORLD_ROWS || nc < 0 || nc >= WORLD_COLS) return null
+        return { row: nr, col: nc, cell: { fg: cell.fg, bg: cell.bg } }
+      })
+      .filter((g): g is GhostCell => g !== null)
+
     set({
-      duplicateGhost: ghost,
+      duplicateGhost: cloneGhost,
       duplicateGhostLayer: 'fg',
       selection: {
         startRow: selection.startRow + 1, startCol: selection.startCol + 1,
@@ -373,7 +480,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
         startRow: selection.startRow + 1, startCol: selection.startCol + 1,
         endRow: selection.endRow + 1,     endCol: selection.endCol + 1,
       },
-      selectedBlockCount: null,
+      selectedBlockCount: (() => {
+        const total = cloneGhost.length
+        const empty = cloneGhost.filter(g => g.cell.fg === 0 && g.cell.bg === 0).length
+        return { total, empty, filled: total - empty }
+      })(),
     })
   },
 
@@ -396,54 +507,117 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   // ── Selection move ─────────────────────────────────────────────────────────
+  //
+  // KEY DESIGN: we never write moved tiles back into `grid` until commit.
+  //
+  // On moveSelectionStart:
+  //   1. Snapshot the grid with the selection cells blanked → selectionBaseGrid.
+  //   2. Save the original cell data           → selectionClipboard.
+  //   3. Set duplicateGhost to the initial (delta=0) ghost so the renderer
+  //      draws the tiles in their original position as a floating ghost.
+  //
+  // On moveSelectionUpdate:
+  //   Recompute the ghost at (clipboard[i].row + dr, clipboard[i].col + dc).
+  //   Only selectionBaseGrid + ghost changes — the real grid never changes.
+  //
+  // On moveSelectionCommit:
+  //   Apply ghost onto selectionBaseGrid → new grid. Save to history. Done.
 
   moveSelectionStart: (row, col) => {
-    const { duplicateGhost, selection, grid } = get()
+    const { duplicateGhost, duplicateGhostLayer, selection, grid } = get()
 
-    if (duplicateGhost) {
+    // ── Case A: moving a duplicate ghost ─────────────────────────────────
+    if (duplicateGhost && duplicateGhostLayer) {
+      // The ghost cells are already floating (not in the real grid), so
+      // selectionBaseGrid is just the current grid unchanged.
       set({
-        selectionClipboard: duplicateGhost.map(g => ({ ...g, cell: { ...g.cell } })),
+        selectionClipboard: duplicateGhost.map(g => ({ row: g.row, col: g.col, cell: { ...g.cell } })),
+        selectionBaseGrid: cloneGrid(grid),
         selectionMoveAnchor: { row, col },
         selectionMoveDelta: { dr: 0, dc: 0 },
-        duplicateGhost: null,
-        selectedBlockCount: null,
+        duplicateGhost: duplicateGhost, // keep ghost so renderer shows it
+        duplicateGhostLayer: duplicateGhostLayer,
+        // selectedBlockCount intentionally NOT reset
       })
       return
     }
 
+    // ── Case B: moving a normal selection ─────────────────────────────────
     if (!selection) return
 
-    const clipboard: { row: number; col: number; cell: GridCell }[] = []
-    for (let r = selection.startRow; r <= selection.endRow; r++) {
-      for (let c = selection.startCol; c <= selection.endCol; c++) {
+    // Use the frozen snapshot for the tiles being lifted — never the live grid.
+    const { selectionSnapshot, selectionUnderGrid } = get()
+    const clipboard: { row: number; col: number; cell: GridCell }[] =
+      selectionSnapshot
+        ? selectionSnapshot.map(s => ({ ...s, cell: { ...s.cell } }))
+        : (() => {
+            const result: { row: number; col: number; cell: GridCell }[] = []
+            for (let r = selection.startRow; r <= selection.endRow; r++) {
+              for (let c = selection.startCol; c <= selection.endCol; c++) {
+                if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
+                result.push({ row: r, col: c, cell: { ...grid[r][c] } })
+              }
+            }
+            return result
+          })()
+
+    // Build the base grid by restoring whatever was beneath the selection when
+    // it was last dropped. This prevents erasing tiles the selection sat on top of.
+    const baseGrid = cloneGrid(grid)
+    if (selectionUnderGrid) {
+      // Restore the cells that were underneath the selection at its last commit.
+      for (const { row: r, col: c, cell } of selectionUnderGrid) {
         if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
-        clipboard.push({ row: r, col: c, cell: { ...grid[r][c] } })
+        baseGrid[r][c] = { ...cell }
+      }
+    } else {
+      // First move after a fresh selection drag — just blank the snapshot positions.
+      for (const { row: r, col: c } of clipboard) {
+        if (r < 0 || r >= WORLD_ROWS || c < 0 || c >= WORLD_COLS) continue
+        baseGrid[r][c].fg = 0
+        baseGrid[r][c].bg = 0
       }
     }
 
-    const next = cloneGrid(grid)
-    for (const { row: r, col: c } of clipboard) {
-      next[r][c].fg = 0
-      next[r][c].bg = 0
-    }
+    // Initial ghost sits exactly where the tiles were (dr=0, dc=0)
+    const initialGhost: GhostCell[] = clipboard.map(({ row: r, col: c, cell }) => ({
+      row: r,
+      col: c,
+      cell: { ...cell },
+    }))
 
     set({
       selectionClipboard: clipboard,
+      selectionBaseGrid: baseGrid,
       selectionMoveAnchor: { row, col },
       selectionMoveDelta: { dr: 0, dc: 0 },
-      grid: next,
+      // Use duplicateGhost so the existing ghost renderer draws the floating tiles
+      duplicateGhost: initialGhost,
+      duplicateGhostLayer: null, // null = this is a move ghost, not a clone ghost
+      // Switch displayed grid to base (holes visible while dragging)
+      grid: baseGrid,
+      // selectedBlockCount intentionally NOT reset — keep the frozen count from endSelection
     })
   },
 
   moveSelectionUpdate: (row, col) => {
-    const { selectionClipboard, selectionMoveAnchor, selectionMoveDelta, grid, duplicateGhostLayer } = get()
-    if (!selectionClipboard || !selectionMoveAnchor) return
+    const { selectionClipboard, selectionMoveAnchor, selectionBaseGrid } = get()
+    if (!selectionClipboard || !selectionMoveAnchor || !selectionBaseGrid) return
 
     const newDr = row - selectionMoveAnchor.row
     const newDc = col - selectionMoveAnchor.col
-    const { dr: prevDr, dc: prevDc } = selectionMoveDelta
+    const { dr: prevDr, dc: prevDc } = get().selectionMoveDelta
 
     if (newDr === prevDr && newDc === prevDc) return
+
+    // Build the new ghost at the updated offset
+    const newGhost: GhostCell[] = selectionClipboard
+      .map(({ row: r, col: c, cell }) => ({
+        row: r + newDr,
+        col: c + newDc,
+        cell: { ...cell },
+      }))
+      .filter(g => g.row >= 0 && g.row < WORLD_ROWS && g.col >= 0 && g.col < WORLD_COLS)
 
     const origRows = selectionClipboard.map(e => e.row)
     const origCols = selectionClipboard.map(e => e.col)
@@ -452,67 +626,73 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const newEndRow   = Math.max(...origRows) + newDr
     const newEndCol   = Math.max(...origCols) + newDc
 
-    if (duplicateGhostLayer) {
-      const ghost: GhostCell[] = selectionClipboard
-        .map(({ row: r, col: c, cell }) => ({
-          row: r + newDr,
-          col: c + newDc,
-          cell: { ...cell },
-        }))
-        .filter(g => g.row >= 0 && g.row < WORLD_ROWS && g.col >= 0 && g.col < WORLD_COLS)
-
-      set({
-        selectionMoveDelta: { dr: newDr, dc: newDc },
-        duplicateGhost: ghost,
-        duplicateGhostSelection: { startRow: newStartRow, startCol: newStartCol, endRow: newEndRow, endCol: newEndCol },
-        selection: { startRow: newStartRow, startCol: newStartCol, endRow: newEndRow, endCol: newEndCol },
-        anchorRow: newStartRow,
-        anchorCol: newStartCol,
-      })
-      return
-    }
-
-    const next = cloneGrid(grid)
-
-    for (const { row: r, col: c } of selectionClipboard) {
-      const pr = r + prevDr, pc = c + prevDc
-      if (pr < 0 || pr >= WORLD_ROWS || pc < 0 || pc >= WORLD_COLS) continue
-      next[pr][pc].fg = 0
-      next[pr][pc].bg = 0
-    }
-
-    for (const { row: r, col: c, cell } of selectionClipboard) {
-      const nr = r + newDr, nc = c + newDc
-      if (nr < 0 || nr >= WORLD_ROWS || nc < 0 || nc >= WORLD_COLS) continue
-      next[nr][nc].fg = cell.fg
-      next[nr][nc].bg = cell.bg
-    }
-
     set({
-      grid: next,
       selectionMoveDelta: { dr: newDr, dc: newDc },
+      duplicateGhost: newGhost,
       selection: { startRow: newStartRow, startCol: newStartCol, endRow: newEndRow, endCol: newEndCol },
+      duplicateGhostSelection: { startRow: newStartRow, startCol: newStartCol, endRow: newEndRow, endCol: newEndCol },
       anchorRow: newStartRow,
       anchorCol: newStartCol,
+      // grid stays as selectionBaseGrid — never modified during drag
     })
   },
 
   moveSelectionCommit: () => {
-    const { selectionClipboard, duplicateGhostLayer } = get()
+    const { selectionClipboard, selectionBaseGrid, selectionMoveDelta } = get()
 
-    if (duplicateGhostLayer && selectionClipboard) {
+    if (!selectionClipboard || !selectionBaseGrid) {
       set({
         selectionClipboard: null,
         selectionMoveAnchor: null,
         selectionMoveDelta: { dr: 0, dc: 0 },
+        selectionBaseGrid: null,
       })
       return
     }
 
+    // Apply the ghost at the final delta onto the base grid
+    const { dr, dc } = selectionMoveDelta
+    const ghost: GhostCell[] = selectionClipboard.map(({ row: r, col: c, cell }) => ({
+      row: r + dr,
+      col: c + dc,
+      cell,
+    }))
+
+    // Record what the base grid has at the new drop positions BEFORE applying
+    // the ghost — these are the tiles that will be "under" the selection after
+    // this commit, and must be restored if the user moves the selection again.
+    const newUnderGrid = selectionClipboard
+      .map(({ row: r, col: c }) => {
+        const nr = r + dr
+        const nc = c + dc
+        if (nr < 0 || nr >= WORLD_ROWS || nc < 0 || nc >= WORLD_COLS) return null
+        return { row: nr, col: nc, cell: { ...selectionBaseGrid[nr][nc] } }
+      })
+      .filter((s): s is { row: number; col: number; cell: GridCell } => s !== null)
+
+    const committed = applyGhost(selectionBaseGrid, ghost)
+
+    // Rebuild snapshot at new positions for any subsequent move.
+    const newSnapshot = selectionClipboard
+      .map(({ row: r, col: c, cell }) => {
+        const nr = r + dr
+        const nc = c + dc
+        if (nr < 0 || nr >= WORLD_ROWS || nc < 0 || nc >= WORLD_COLS) return null
+        return { row: nr, col: nc, cell: { ...cell } }
+      })
+      .filter((s): s is { row: number; col: number; cell: GridCell } => s !== null)
+
     set({
+      grid: committed,
       selectionClipboard: null,
       selectionMoveAnchor: null,
       selectionMoveDelta: { dr: 0, dc: 0 },
+      selectionBaseGrid: null,
+      duplicateGhost: null,
+      duplicateGhostSelection: null,
+      duplicateGhostLayer: null,
+      selectionSnapshot: newSnapshot,
+      selectionUnderGrid: newUnderGrid,
     })
     get().saveToHistory()
   },
@@ -537,6 +717,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
       selectionClipboard: null,
       selectionMoveAnchor: null,
       selectionMoveDelta: { dr: 0, dc: 0 },
+      selectionBaseGrid: null,
+      selectionSnapshot: null,
+      selectionUnderGrid: null,
       duplicateGhost: null,
       duplicateGhostSelection: null,
       duplicateGhostLayer: null,

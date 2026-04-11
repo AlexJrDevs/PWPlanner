@@ -1,0 +1,30 @@
+[33me4ae383[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to HEAD~1
+[33m1d06719[m HEAD@{1}: reset: moving to origin/main
+[33m1d06719[m HEAD@{2}: reset: moving to HEAD
+[33m1d06719[m HEAD@{3}: commit: Updated: Zoom buttons to zoom to center. Added: Pinch zoom for mobile, set single finger drawing on mobile
+[33me4ae383[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{4}: commit: Improved keywords
+[33m75f62cd[m HEAD@{5}: commit: Added: Site Map
+[33m3aa7605[m HEAD@{6}: commit: Fixed ad banner layout for mobile v2
+[33m3876eaa[m HEAD@{7}: commit: Fixed adsense banner on mobile
+[33mf6159e6[m HEAD@{8}: commit: Adedd adsense auto
+[33m85bde98[m HEAD@{9}: commit: FIxed adsense now
+[33mc850580[m HEAD@{10}: commit: Fixed adsense
+[33m40bfcad[m HEAD@{11}: commit: Added slot ad ids
+[33m3cc7de3[m HEAD@{12}: commit: Adsense update
+[33mfdeb673[m HEAD@{13}: commit (merge): Added: Adsense
+[33m06cbab6[m HEAD@{14}: commit: Added: Adsense
+[33m58cb2b0[m HEAD@{15}: commit: Added discord invite code
+[33m0380589[m HEAD@{16}: commit: Fixed deploy error
+[33m86f4053[m HEAD@{17}: commit: Finilizing
+[33m84a4827[m HEAD@{18}: commit: Added: Texture Cache Check
+[33mc71cb49[m HEAD@{19}: commit: Added: Adsense Template. UPDATED: UI Mobile Sizing
+[33mde5f6d5[m HEAD@{20}: commit: Added: Real game blocks
+[33m00e2994[m HEAD@{21}: commit: Moved tools to the bottom
+[33mc7a9b4a[m HEAD@{22}: commit: Added: Grid Pan / Move, Selection, Painting, Erase, Pen, Fill, Undo / redo Functions
+[33m43d8915[m HEAD@{23}: commit: Updated toolbar added more functions
+[33m303fc9f[m HEAD@{24}: commit: Added every block / background / prop asset
+[33m3721d5e[m HEAD@{25}: commit: Added reference to every block / Props / Background
+[33mc8bc937[m HEAD@{26}: commit: Removed .env from tracking
+[33mbe7651d[m HEAD@{27}: commit: Removed .env
+[33mec00056[m HEAD@{28}: Branch: renamed refs/heads/master to refs/heads/main
+[33mec00056[m HEAD@{30}: commit (initial): Initial Project Setup
