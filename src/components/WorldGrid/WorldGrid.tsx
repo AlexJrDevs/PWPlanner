@@ -13,7 +13,7 @@ const atlasTextureCache = new Map<string, Texture>()
 const frameTextureCache = new Map<number, Texture>()
 
 async function getItemTexture(id: number): Promise<Texture | null> {
-if (frameTextureCache.has(id)) return frameTextureCache.get(id)!
+if (frameTextureCache.has(id)) return frameTextureCache.get(id) as Texture
 
   const item = getItemById(id)
   if (!item) return null
