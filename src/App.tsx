@@ -42,13 +42,13 @@ function App() {
 
 
       <aside className="lg:hidden shrink-0 flex items-center justify-center bg-gray-900 border-b border-gray-800">
-        <AdBanner adSlot="MOBILE_SLOT_ID" adFormat="horizontal" />
+        <AdBanner adSlot="6291668108" adFormat="horizontal" />
       </aside>
 
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-r border-gray-800">
-          <AdBanner adSlot="LEFT_SLOT_ID" adFormat="vertical" />
+          <AdBanner adSlot="3873388321" adFormat="vertical" />
         </aside>
 
         <div className="flex-1 overflow-hidden min-w-0">
@@ -56,7 +56,7 @@ function App() {
         </div>
 
         <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-l border-gray-800">
-          <AdBanner adSlot="RIGHT_SLOT_ID" adFormat="vertical" />
+          <AdBanner adSlot="2560306650" adFormat="vertical" />
         </aside>
       </div>
     </div>
