@@ -25,7 +25,7 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
 
-      <header className="px-4 py-2 bg-gray-900 border-b border-gray-700 flex items-center gap-3 shrink-0">
+      <header className="shrink-0 px-4 py-2 bg-gray-900 border-b border-gray-700 flex items-center gap-3">
         <h1 className="text-lg font-bold text-orange-400">PW Planner</h1>
         <a
           href="https://discord.gg/pzDHcbxAkTZ"
@@ -38,16 +38,19 @@ function App() {
         </a>
       </header>
 
-      <aside className="lg:hidden shrink-0 flex items-center justify-center bg-gray-900 border-b border-gray-800">
+      {/* Mobile ad - capped so it never takes over the screen */}
+      <aside className="lg:hidden shrink-0 max-h-[100px] overflow-hidden flex items-center justify-center bg-gray-900 border-b border-gray-800">
         <AdBanner adSlot="6291668108" adFormat="horizontal" />
       </aside>
 
-      <div className="flex flex-1 overflow-hidden min-h-0">
+      {/* Middle row - fills all remaining vertical space */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <aside className="w-[160px] shrink-0 hidden lg:flex items-start justify-center pt-4 bg-gray-900 border-r border-gray-800">
           <AdBanner adSlot="3873388321" adFormat="vertical" />
         </aside>
 
-        <div className="flex-1 overflow-hidden min-w-0 min-h-0">
+        {/* Editor - h-full so EditorLayout's h-full resolves correctly */}
+        <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden">
           <EditorLayout />
         </div>
 
