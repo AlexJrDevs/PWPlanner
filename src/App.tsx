@@ -28,7 +28,7 @@ function App() {
       <header className="shrink-0 px-4 py-2 bg-gray-900 border-b border-gray-700 flex items-center gap-3">
         <h1 className="text-lg font-bold text-orange-400">PW Planner</h1>
         <a
-          href="https://discord.gg/pzDHcbxAkTZ"
+          href="https://discord.gg/p2v9UsdXQR"
           target="_blank"
           rel="noopener noreferrer"
           title="Join our Discord"
